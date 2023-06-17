@@ -1,31 +1,23 @@
 #include <Arduino.h>
-#include <Logger.h>
 #include "config.h"
 
-#include "BleServer.h"
-
-
-HardwareSerial vesc(2);
-BleServer *bleServer = new BleServer();
-
-
 void setup() {
-    vesc.begin(VESC_BAUD_RATE, SERIAL_8N1, VESC_RX_PIN, VESC_TX_PIN, false);
-#ifdef CANBUS_ONLY
-    bleServer->init(canbus->stream, canbus);
-#else
-    bleServer->init(&vesc);
+    // setup vesc uart
+    // setup dewalt monitor
+    // setup brake throttle & hid control
+    // setup web gui
+
 }
 
 void loop() {
-    if (AppConfiguration::getInstance()->config.sendConfig) {
-        bleServer->sendConfig();
-        AppConfiguration::getInstance()->config.sendConfig = false;
-    }
+    /*
+        TODO: figure this stuff out:
 
-    // call the VESC UART-to-Bluetooth bridge
-#ifdef CANBUS_ENABLED
-    bleServer->loop(&vescData, loopTime, maxLoopTime);
-#else
-    bleServer->loop();
+        where are PAS levels stored / selected
+        should IOManager interrupts just directly call the function
+
+    
+    */
+
+
 }
