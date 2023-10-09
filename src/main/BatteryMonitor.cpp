@@ -1,4 +1,5 @@
-
+#include "BatteryMonitor.h"
+#include "IOManager.h""
 
 /*  
 
@@ -6,85 +7,60 @@
 
     Will now be getting battery input data from IOManager for voltages & temps, 
     full input voltage will be got from VescComm, 
-    needs to send back signal to kill the bike when voltages are too low, as well as alerts beforehand
+    needs to send back signal to kill the bike when voltages or temps are out of bounds, as well as alerts beforehand
 
 */
+
+BatteryMonitor::BatteryMonitor(VescComm vesccomm, IOManager manager){
+  vesc = vesccomm;
+  io = manager;
+}
+
+void BatteryMonitor::updateBatteryData(int p, int s, float[] data){
+  batteries[p][s] = data;
+}
+
+
+void BatteryMonitor::setInputVoltage(int voltage){
+  inputVoltage = voltage
+}
+
+bool BatteryMonitor::checkStatus(IOManager io){
+  for(int p = 0; p < PARALLEL_PACK_NUM; p++) {
+    for(int s = 0; s < SERIES_BAT_NUM; s++) {
+      batteries[p][s] = io.getBatteryData[p, s];
+      
+      float voltage = batteries[p][s][0]; // Check voltage for each battery in pack
+      if(!underVolt){
+        if(voltage < VOLTAGE_CUT_OFF){
+          vesc.disableMotor();
+          return false;
+        } // TODO: Check if each series battery is dangerously different, e.g. 18v vs 21v (0.5v a good safe difference?)
+      } else {
+        if(voltage > VOLTAGE_RECOVERY){
+          vesc.enableMotor();
+        }
+      }
+      
+      float temperature = batteries[p][s][1]; // Check temps for each battery in pack
+      if(!overTemp){
+        if(temperature < TEMPERATURE_CUT_OFF){ 
+          vesc.disableMotor();
+          return false;
+        }
+      } else {
+        if(temperature > TEMPERATURE_RECOVERY){
+          vesc.enableMotor();
+        }
+      }
+    }
+  }
+}
 
 
 //TODO: reconfigure old arduino battery code for the new ESP32 controller:
 
-float readVoltage(int pin){
-  int data = muxAnalogRead(pin);
-  float voltage = data / 40.92;
-  printVoltage(pin, voltage);
-  return voltage;
-}
 
-//float readTemperatureOLD(int pin){
-//  int data = analogRead(pin);
-//  float temperature = 0.00; // Figure out how to read a thermistor
-//  printTemperature(pin, temperature);
-//  return temperature;
-//}
-
-float readTemperature(int pin){
-  uint8_t i;
-  float average;
-  int samples[NUMSAMPLES];
-
-  // take N samples in a row, with a slight delay
-  for (i=0; i< NUMSAMPLES; i++) {
-   samples[i] = analogRead(pin);
-//   Serial.print("RAW READING: ");
-//   Serial.println(samples[i]);
-   delay(10);
-  }
-  
-  // average all the samples out
-  average = 0;
-  for (i=0; i< NUMSAMPLES; i++) {
-     average += samples[i];
-  }
-  average /= NUMSAMPLES;
-
-//  Serial.print("Average analog reading "); 
-//  Serial.println(average);
-  
-  // convert the value to resistance
-  average = 1023 / average - 1;
-  average = SERIESRESISTOR / average;
-//  Serial.print("Thermistor resistance "); 
-//  Serial.println(average);
-  
-  float steinhart;
-  steinhart = average / THERMISTORNOMINAL;     // (R/Ro)
-  steinhart = log(steinhart);                  // ln(R/Ro)
-  steinhart /= BCOEFFICIENT;                   // 1/B * ln(R/Ro)
-  steinhart += 1.0 / (TEMPERATURENOMINAL + 273.15); // + (1/To)
-  steinhart = 1.0 / steinhart;                 // Invert
-  steinhart -= 273.15;                         // convert absolute temp to C
-
-  return steinhart;
-//  Serial.print("Temperature "); 
-//  Serial.print(steinhart);
-//  Serial.println(" *C");
-}
-
-void printVoltage(int pin, float voltage){
-    Serial.print("Pin ");
-    Serial.print(pin);
-    Serial.print(" Voltage: ");
-    Serial.print(voltage); 
-    Serial.println("v");
-}
-
-void printTemperature(int pin, float temperature){
-    Serial.print("Pin ");
-    Serial.print(pin);
-    Serial.print(" Temperature: ");
-    Serial.print(temperature); 
-    Serial.println("°C");
-}
 
 class Pack {
   public:
@@ -133,6 +109,7 @@ int Pack::getId(){
 
 void Pack::turnOffPack(){
   digitalWrite(mosfetPin, LOW);   // turn the Battery Pack off (LOW is the voltage level)
+  // Maybe pass VescComm into this in constructor?
 //  packStatus = false;
 }
 
@@ -146,14 +123,14 @@ bool Pack::getStatus(){
 }
 
 bool Pack::checkStatus(){
-  for(int i = 0; i < SERIAL_BAT_NUM; i++) {
+  for(int i = 0; i < SERIES_BAT_NUM; i++) {
     
     float voltage = readVoltage(voltPin[i]); // Check voltage for each battery in pack
     if(!underVolt){
       if(voltage < VOLTAGE_CUT_OFF){
         turnOffPack();
         return false;
-      }
+      } // TODO: Check if each series battery is dangerously different, e.g. 18v vs 21v (0.5v a good safe difference?)
     } else {
       if(voltage > VOLTAGE_RECOVERY){
         turnOnPack();
@@ -242,74 +219,4 @@ void loop() {
   }
   loopCount += 1;
   delay(LOOP_EXECUTION_DELAY_MS);
-}
-
-void blinkLEDAllOK(){
-    digitalWrite(7, LOW);   
-    delay(50);
-    digitalWrite(7, HIGH);   
-    delay(250);
-    digitalWrite(7, LOW);  
-    delay(50);
-    digitalWrite(7, HIGH);   
-    delay(250);
-    digitalWrite(7, LOW);   
-}
-
-void blinkLEDPartialOK(){
-    digitalWrite(7, LOW);   
-    delay(50);
-    digitalWrite(7, HIGH);   
-    delay(150);
-    digitalWrite(7, LOW);   
-    delay(150);
-    digitalWrite(7, HIGH);   
-    delay(150);
-    digitalWrite(7, LOW);   
-    delay(150);
-    digitalWrite(7, LOW);   
-}
-
-void blinkLEDUnderVolt(){
-  
-}
-
-void blinkLEDOverTemp(){
-  
-}
-
-int muxChannel[16][4]={
-  {0,0,0,0}, //channel 0
-  {1,0,0,0}, //channel 1
-  {0,1,0,0}, //channel 2
-  {1,1,0,0}, //channel 3
-  {0,0,1,0}, //channel 4
-  {1,0,1,0}, //channel 5
-  {0,1,1,0}, //channel 6
-  {1,1,1,0}, //channel 7
-  {0,0,0,1}, //channel 8
-  {1,0,0,1}, //channel 9
-  {0,1,0,1}, //channel 10
-  {1,1,0,1}, //channel 11
-  {0,0,1,1}, //channel 12
-  {1,0,1,1}, //channel 13
-  {0,1,1,1}, //channel 14
-  {1,1,1,1}  //channel 15
-};
-
-int muxAnalogRead(int pin){
-  int controlPin[] = {S0, S1, S2, S3};
-
-  //loop through the 4 sig
-  for(int i = 0; i < 4; i ++){
-    digitalWrite(controlPin[i], muxChannel[pin][i]);
-  }
-
-  //read the value at the SIG pin
-  int val = analogRead(MUX_SIG_PIN);
-  return val;
-  
-//  //return the value
-//  float voltage = (val * 5.0) / 1024.0;
-//  return voltage;
 }
